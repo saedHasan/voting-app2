@@ -33,7 +33,7 @@ def hello():
         redis = get_redis()
         vote = request.form['vote']
         app.logger.info('Received vote for %s', vote)
-        data = json.dumps({'voter_id': voter_id, 'vote': vote})
+        data = json.dumps({'id': voter_id, 'vote': vote})
         redis.rpush('votes', data)
 
     resp = make_response(render_template(
@@ -43,7 +43,7 @@ def hello():
         hostname=hostname,
         vote=vote,
     ))
-    resp.set_cookie('voter_id', voter_id)
+    resp.set_cookie('id', voter_id)
     return resp
 
 
