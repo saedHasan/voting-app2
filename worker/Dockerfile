@@ -1,26 +1,26 @@
-# because of dotnet, we always build on amd64, and target platforms in cli
-# dotnet doesn't support QEMU for building or running. 
-# (errors common in arm/v7 32bit) https://github.com/dotnet/dotnet-docker/issues/1537
-# https://hub.docker.com/_/microsoft-dotnet
-# hadolint ignore=DL3029
-# to build for a different platform than your host, use --platform=<platform>
-# for example, if you were on Intel (amd64) and wanted to build for ARM, you would use:
-# docker buildx build --platform "linux/arm64/v8" .
-FROM --platform=${BUILDPLATFORM} mcr.microsoft.com/dotnet/sdk:7.0 as build
-ARG TARGETPLATFORM
-ARG TARGETARCH
-ARG BUILDPLATFORM
-RUN echo "I am running on $BUILDPLATFORM, building for $TARGETPLATFORM"
+FROM maven:3.5-jdk-8-alpine AS build
 
-WORKDIR /source
-COPY *.csproj .
-RUN dotnet restore -a $TARGETARCH
+WORKDIR /code
 
-COPY . .
-RUN dotnet publish -c release -o /app -a $TARGETARCH --self-contained false --no-restore
+COPY src/pom.xml /code/pom.xml
+RUN ["mvn", "dependency:resolve"]
+RUN ["mvn", "verify"]
 
-# app image
-FROM mcr.microsoft.com/dotnet/runtime:7.0
+# Adding source, compile and package into a fat jar
+COPY ["src/src/main", "/code/src/main"]
+RUN ["mvn", "package"]
+
+FROM openjdk:8-jre
+
 WORKDIR /app
-COPY --from=build /app .
-ENTRYPOINT ["dotnet", "Worker.dll"]
+
+RUN useradd -u 1001 -r -g 0 -d /app -s /sbin/nologin \
+    -c "Default Application User" default && \
+    chown -R 1001:0 /app && \
+    chmod -R g+rw /app
+
+USER 1001
+
+COPY --from=build /code/target/worker-jar-with-dependencies.jar /
+
+CMD ["java", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseCGroupMemoryLimitForHeap", "-jar", "/worker-jar-with-dependencies.jar"]
